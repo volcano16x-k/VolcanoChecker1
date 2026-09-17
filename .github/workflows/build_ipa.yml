@@ -1,0 +1,61 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: 'latest-stable'
+
+    - name: Create Entitlements
+      run: |
+        cat <<EOF > entitlements.plist
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>platform-application</key>
+            <true/>
+            <key>com.apple.private.security.no-sandbox</key>
+            <true/>
+            <key>com.apple.private.skip-library-validation</key>
+            <true/>
+        </dict>
+        </plist>
+        EOF
+
+    - name: Compile and Sign App
+      run: |
+        mkdir -p Payload/VolcanoSecurityChecker.app
+        SDKPATH=$(xcrun --sdk iphoneos --show-sdk-path)
+        
+        swiftc -sdk $SDKPATH \
+               -target arm64-apple-ios14.0 \
+               -emit-executable \
+               -parse-as-library \
+               *.swift \
+               -o Payload/VolcanoSecurityChecker.app/VolcanoSecurityChecker
+        
+        cp Info.plist Payload/VolcanoSecurityChecker.app/
+        
+        # توقيع التطبيق بالصلاحيات المباشرة
+        codesign --force --sign - --entitlements entitlements.plist Payload/VolcanoSecurityChecker.app
+        
+        zip -r VolcanoSecurityChecker.ipa Payload
+
+    - name: Upload IPA Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: VolcanoSecurityChecker-IPA
+        path: VolcanoSecurityChecker.ipa
